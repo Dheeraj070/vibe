@@ -6,6 +6,7 @@ import { RoomService } from './RoomService.js';
 
 const polls: Poll[] = [];
 const pollAnswers: PollAnswer[] = [];
+const pollTimers: Record<string, NodeJS.Timeout> = {};
 
 @injectable()
 export class PollService {
@@ -19,6 +20,7 @@ export class PollService {
     options: string[];
     roomCode: string;
     creatorId: string;
+    timer?: number;
   }): Poll {
     const poll: Poll = {
       id: crypto.randomUUID(),
@@ -27,10 +29,23 @@ export class PollService {
       roomCode: data.roomCode,
       creatorId: data.creatorId,
       createdAt: new Date(),
+      timer: data.timer ?? 30 // default to 30 seconds if not provided
     };
     polls.push(poll);
     pollSocket.emitToRoom(poll.roomCode, 'new-poll', poll);
     return poll;
+  }
+
+  startPollTimer(poll: Poll) {
+    const timeout = setTimeout(() => {
+      pollSocket.emitToRoom(poll.roomCode, 'poll-ended', { pollId: poll.id });
+      console.log(`Poll timer ended for pollId: ${poll.id}`);
+      // Optional: clean up timer
+      delete pollTimers[poll.id];
+    }, poll.timer * 1000);
+
+    // Save timeout so it can be cleared if needed
+    pollTimers[poll.id] = timeout;
   }
 
   submitAnswer(pollId: string, userId: string, answerIndex: number) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import io from "socket.io-client";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,8 @@ type Poll = {
   options: string[];
   roomCode: string;
   creatorId: string;
-  createdAt: string;
+  createdAt: Date;
+  timer: number;
 };
 
 type RoomDetails = {
@@ -35,28 +37,31 @@ type RoomDetails = {
   createdAt: string;
 };
 
-export default function StudentPollPage() {
-  const [roomCode, setRoomCode] = useState("");
+export default function StudentPollRoom() {
+  const params = useParams({ from: '/student/pollroom/$code' });
+  const roomCode = params.code;
+  if (!roomCode) return <div>Loading...</div>;
+  const navigate = useNavigate();
   const [joinedRoom, setJoinedRoom] = useState(false);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [roomDetails, setRoomDetails] = useState<RoomDetails | null>(null);
   const [answeredPolls, setAnsweredPolls] = useState<Record<string, number>>({});
-  const [roomError, setRoomError] = useState<string | null>(null);
   const [activeMenu, setActiveMenu] = useState<"room" | "previous" | null>(null); // which side panel to show
+  const [pollTimers, setPollTimers] = useState<Record<string, number>>({}); // poll.id -> seconds left
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, number | null>>({});
 
-  // Auto-rejoin if user refreshes
+  // Auto-join on mount
   useEffect(() => {
-    const savedRoomCode = localStorage.getItem("activeRoomCode");
-    const savedJoined = localStorage.getItem("joinedRoom");
-    if (savedRoomCode && savedJoined === "true") {
-      setRoomCode(savedRoomCode);
-      setJoinedRoom(true);
-      socket.emit("join-room", savedRoomCode);
-      loadRoomDetails(savedRoomCode);
-      const savedAnswers = localStorage.getItem(`answeredPolls_${savedRoomCode}`);
-      if (savedAnswers) setAnsweredPolls(JSON.parse(savedAnswers));
-    }
-  }, []);
+    if (!roomCode) return;
+    socket.emit("join-room", roomCode);
+    setJoinedRoom(true);
+    loadRoomDetails(roomCode);
+    const savedAnswers = localStorage.getItem(`answeredPolls_${roomCode}`);
+    if (savedAnswers) setAnsweredPolls(JSON.parse(savedAnswers));
+    localStorage.setItem("activeRoomCode", roomCode);
+    localStorage.setItem("joinedRoom", "true");
+    toast.success("Joined room!");
+  }, [roomCode]);
 
   useEffect(() => {
         socket.on("new-poll", (poll: Poll) => {
@@ -66,6 +71,28 @@ export default function StudentPollPage() {
         return () => { socket.off("new-poll"); };
     }, []);
 
+useEffect(() => {
+  const interval = setInterval(() => {
+    setPollTimers(prev => {
+      const updated: Record<string, number> = {};
+      polls.forEach(p => {
+        const current = prev[p.id] ?? p.timer;
+        updated[p.id] = current > 0 ? current - 1 : 0;
+      });
+      return updated;
+    });
+  }, 1000);
+  return () => clearInterval(interval);
+}, [polls]);
+
+  // remove poll when timer hits 0
+  useEffect(() => {
+    Object.entries(pollTimers).forEach(([pollId, time]) => {
+      if (time === 0) {
+        setPolls(prev => prev.filter(p => p.id !== pollId));
+      }
+    });
+  }, [pollTimers]);
 
   useEffect(() => {
     if (roomCode) {
@@ -79,28 +106,6 @@ export default function StudentPollPage() {
       if (res.data) setRoomDetails(res.data);
     } catch (e) {
       console.error("Failed to load room details:", e);
-    }
-  };
-
-  const joinRoom = async () => {
-    setRoomError(null);
-    try {
-      const res = await api.get(`/livequizzes/rooms/${roomCode}`);
-      if (res.data?.code) {
-        socket.emit("join-room", roomCode);
-        setJoinedRoom(true);
-        setRoomDetails(res.data);
-        localStorage.setItem("activeRoomCode", roomCode);
-        localStorage.setItem("joinedRoom", "true");
-        setPolls([]); // reset polls
-        const savedAnswers = localStorage.getItem(`answeredPolls_${roomCode}`);
-        setAnsweredPolls(savedAnswers ? JSON.parse(savedAnswers) : {});
-        toast.success("Joined room!");
-      } else {
-        setRoomError("Invalid room code.");
-      }
-    } catch (error: any) {
-      setRoomError(error.response?.status === 404 ? "Room not found." : "Unexpected error.");
     }
   };
 
@@ -126,13 +131,14 @@ export default function StudentPollPage() {
     localStorage.removeItem("joinedRoom");
     setActiveMenu(null);
     toast.info("Left the room.");
+    navigate({ to: `/student/pollroom` });
   };
 
   return (
     <div className="max-w-6xl mx-auto mt-10 flex gap-4">
       <Card className="flex-1 p-6">
         <CardHeader className="flex justify-between items-center">
-          <CardTitle>Student Poll Room</CardTitle>
+          <CardTitle>Poll Room_Room Code: {roomCode}</CardTitle>
           {joinedRoom && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -141,14 +147,10 @@ export default function StudentPollPage() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() =>
                   setActiveMenu(activeMenu === "room" ? null : "room")
-                }>
-                  📄 Room Info
-                </DropdownMenuItem>
+                }>📄 Room Info</DropdownMenuItem>
                 <DropdownMenuItem onClick={() =>
                   setActiveMenu(activeMenu === "previous" ? null : "previous")
-                }>
-                  🗂 Previous Polls
-                </DropdownMenuItem>
+                }>🗂 Previous Polls</DropdownMenuItem>
                 <DropdownMenuItem onClick={exitRoom} className="text-red-600">
                   ❌ Leave Room
                 </DropdownMenuItem>
@@ -157,46 +159,51 @@ export default function StudentPollPage() {
           )}
         </CardHeader>
         <CardContent>
-          {!joinedRoom ? (
-            <>
-              <Input
-                placeholder="Enter room code"
-                value={roomCode}
-                onChange={(e) => { setRoomCode(e.target.value); setRoomError(null); }}
-                className="mb-3"
-              />
-              {roomError && <div className="text-red-500 text-sm mb-2">{roomError}</div>}
-              <Button className="w-full" onClick={joinRoom}>Join Room</Button>
-            </>
-          ) : (
-            <>
-              <div className="font-semibold mb-2">Active Polls:</div>
-              {polls.filter(p => answeredPolls[p.id] === undefined).length === 0 && (
-                <div className="text-sm">Waiting for new polls...</div>
-              )}
-              {polls.filter(p => answeredPolls[p.id] === undefined).map((poll) => (
-                <div key={poll.id} className="p-3 border rounded-md mb-3">
-                  <div className="font-medium">{poll.question}</div>
-                  <div className="mt-2 space-y-2">
-                    {poll.options.map((opt, i) => (
-                      <Button
-                        key={i}
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => submitAnswer(poll.id, i)}
-                      >
-                        {opt}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </>
+          <div className="font-semibold mb-2">Active Polls:</div>
+          {polls.filter(p => answeredPolls[p.id] === undefined).length === 0 && (
+            <div className="text-sm">Waiting for new polls...</div>
           )}
+          {polls.filter(p => answeredPolls[p.id] === undefined).map((poll) => (
+            <div key={poll.id} className="p-3 border rounded-md mb-3">
+              <div className="font-medium">{poll.question}</div>
+              <div className="text-xs text-gray-500 mb-2">Time left: {pollTimers[poll.id] ?? poll.timer}s</div>
+              <div className="mt-2 space-y-2">
+                {poll.options.map((opt, i) => (
+                  <Button
+                    key={i}
+                    variant={selectedOptions[poll.id] === i ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => setSelectedOptions(prev => ({ ...prev, [poll.id]: i }))}
+                    disabled={(pollTimers[poll.id] ?? poll.timer) === 0 || answeredPolls[poll.id] !== undefined}
+                  >
+                    {opt}
+                  </Button>
+                ))}
+              </div>
+              <div className="mt-2">
+                {answeredPolls[poll.id] !== undefined ? (
+                  <div className="text-green-600 text-xs">You have submitted this poll</div>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (selectedOptions[poll.id] !== null && selectedOptions[poll.id] !== undefined) {
+                        submitAnswer(poll.id, selectedOptions[poll.id]!);
+                      } else {
+                        toast.warning("Please select an option first");
+                      }
+                    }}
+                    disabled={(pollTimers[poll.id] ?? poll.timer) === 0 || answeredPolls[poll.id] !== undefined}
+                  >
+                    Submit
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
-      {/* 👉 Side panel */}
       {activeMenu && (
         <div className="w-64 p-4 border rounded-md bg-gray-50 dark:bg-gray-800">
           {activeMenu === "room" && roomDetails && (

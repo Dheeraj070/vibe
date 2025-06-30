@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useParams } from "@tanstack/react-router";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,35 +18,22 @@ const api = axios.create({
 type PollResults = Record<string, Record<string, { count: number; users: string[] }>>;
 
 export default function TeacherPollRoom() {
-  const [roomName, setRoomName] = useState("");
-  const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+const params = useParams({ from: '/teacher/pollroom/$code' });
+const roomCode = params.code;
 
+  if (!roomCode) return <div>Loading...</div>;
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", "", "", ""]);
   const [pollResults, setPollResults] = useState<PollResults>({});
-
-  const createRoom = async () => {
-    try {
-      const res = await api.post("/livequizzes/rooms/", {
-        name: roomName,
-        teacherId: "teacher-123" // replace with real ID or from auth
-      });
-      setRoomCode(res.data.code);
-      setInviteLink(res.data.inviteLink);
-      toast.success("Room created!");
-    } catch {
-      toast.error("Failed to create room");
-    }
-  };
+  const [timer, setTimer] = useState<number>(30); // default timer value
 
   const createPoll = async () => {
-    if (!roomCode) return toast.error("No room created");
     try {
       await api.post(`/livequizzes/rooms/${roomCode}/polls`, {
         question,
         options: options.filter(o => o.trim()),
-        creatorId: "teacher-123" // replace with real ID
+        creatorId: "teacher-123", // replace with real ID
+        timer: Number(timer) // send timer to backend
       });
       toast.success("Poll created!");
       setQuestion("");
@@ -56,7 +44,6 @@ export default function TeacherPollRoom() {
   };
 
   const fetchResults = async () => {
-    if (!roomCode) return;
     try {
       const res = await api.get(`/livequizzes/rooms/${roomCode}/polls/results`);
       setPollResults(res.data);
@@ -68,25 +55,9 @@ export default function TeacherPollRoom() {
   return (
     <Card className="max-w-xl mx-auto mt-10 p-6">
       <CardHeader>
-        <CardTitle>Teacher Room & Polls</CardTitle>
+        <CardTitle>Room Code: {roomCode}</CardTitle>
       </CardHeader>
       <CardContent>
-        <Input
-          placeholder="Room name"
-          value={roomName}
-          onChange={(e) => setRoomName(e.target.value)}
-          className="mb-3"
-        />
-        <Button className="w-full mb-4" onClick={createRoom}>
-          Create Room
-        </Button>
-
-        {inviteLink && (
-          <div className="mb-4 text-sm">
-            ✅ Invite link: <code className="bg-gray-100 px-2">{inviteLink}</code>
-          </div>
-        )}
-
         <Input
           placeholder="Poll question"
           value={question}
@@ -106,6 +77,14 @@ export default function TeacherPollRoom() {
             className="mb-2"
           />
         ))}
+        <Input
+          type="number"
+          placeholder="Timer (seconds)"
+          value={timer}
+          min={5}
+          onChange={(e) => setTimer(Number(e.target.value))}
+          className="mb-3"
+        />
         <Button className="w-full mt-2 mb-4" onClick={createPoll}>
           Create Poll
         </Button>
