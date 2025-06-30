@@ -13,9 +13,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
-const socket = io("http://localhost:3000"); // adjust if needed
+// Socket URL and API URL from environment variables
+const Socket_URL = import.meta.env.VITE_SOCKET_URL;
 const API_URL = import.meta.env.VITE_API_URL;
 
+const socket = io(Socket_URL);
+// const socket = io("http://localhost:3000"); // adjust if needed
 const api = axios.create({
   baseURL: API_URL,
   headers: { "Content-Type": "application/json" },
