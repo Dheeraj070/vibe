@@ -32,6 +32,10 @@ import { useCourseStore } from '@/lib/store/course-store'
 import GenAIHomePage from '@/pages/teacher/genai-home'
 import TeacherPoll from '@/pages/teacher/LivePoll'
 import StudentPoll from '@/pages/student/StudentPoll'
+import JoinRoom from '@/pages/student/StudentPollPage';
+import CreateRoom from '@/pages/teacher/TeacherPollRoom';
+import TeacherPollRoom from '@/pages/teacher/TeacherPollRoom'
+import StudentPollPage from '@/pages/student/StudentPollPage'
 
 const sampleText = `
 # 🌟 Sample Markdown Document
@@ -279,6 +283,13 @@ const teacherLivePollRoute = new Route({
   component: TeacherPoll,
 });
 
+// Teacher poll room route
+const teacherPollRoomRoute = new Route({
+  getParentRoute: () => teacherLayoutRoute,
+  path: '/pollroom',
+  component: TeacherPollRoom,
+});
+
 // Teacher create course route
 const teacherCreateCourseRoute = new Route({
   getParentRoute: () => teacherLayoutRoute,
@@ -353,6 +364,13 @@ const studentLivePollRoute = new Route({
   component: StudentPoll,
 });
 
+// Student poll room route
+const studentPollRoomRoute = new Route({
+  getParentRoute: () => studentLayoutRoute,
+  path: '/pollroom',
+  component: StudentPollPage,
+});
+
 // const parentComponentRoute = new Route({
 //   getParentRoute: () => studentLayoutRoute,
 //   path: '/test-ai',
@@ -400,6 +418,7 @@ const routeTree = rootRoute.addChildren([
     teacherTestingRoute,
     teacherGenAIHomeRoute,
     teacherLivePollRoute,
+    teacherPollRoomRoute,
   ]),
   studentLayoutRoute.addChildren([
     studentDashboardRoute,
@@ -409,6 +428,7 @@ const routeTree = rootRoute.addChildren([
     videoRoute,
     quizRoute,
     studentLivePollRoute,
+    studentPollRoomRoute,
     // parentComponentRoute,
   ]),
   coursePageRoute,
